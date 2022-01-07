@@ -100,8 +100,8 @@ async function ping_all_reviewers(reviewers) {
   const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
   const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
 
-  const tagged = individuals.map(individual => `@${individual}`).concat(teams.map(team => `@${team}`))
-  const body = `Attention: ${tagged.join(" ")}\n\nFiles that you are the codeowner for have been modified in this PR.`
+  const tagged = individuals.map((individual) => `@${individual}`).concat(teams.map((team) => `@${team}`));
+  const body = `Attention: ${tagged.join(' ')}\n\nFiles that you are the codeowner for have been modified in this PR.`;
 
   return octokit.rest.issues.createComment({
     owner: context.repo.owner,
@@ -109,6 +109,19 @@ async function ping_all_reviewers(reviewers) {
     issue_number: context.payload.pull_request.number,
     body,
   });
+}
+
+async function get_existing_reviewers() {
+  const context = get_context();
+  const octokit = get_octokit();
+
+  const { data: { users, teams } } = await octokit.rest.pulls.listRequestedReviewers({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number,
+  });
+
+  return users.map((user) => user.login).concat(teams.map((team) => team.slug));
 }
 
 /* Private */
@@ -147,6 +160,7 @@ function clear_cache() {
 }
 
 module.exports = {
+  get_existing_reviewers,
   get_pull_request,
   fetch_config,
   fetch_changed_files,
