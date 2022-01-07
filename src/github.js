@@ -37,7 +37,7 @@ async function fetch_config() {
   const octokit = get_octokit();
   const config_path = get_config_path();
 
-  const { data: response_body } = await octokit.repos.getContent({
+  const { data: response_body } = await octokit.rest.repos.getContent({
     owner: context.repo.owner,
     repo: context.repo.repo,
     path: config_path,
@@ -61,7 +61,7 @@ async function fetch_changed_files() {
   do {
     page += 1;
 
-    const { data: response_body } = await octokit.pulls.listFiles({
+    const { data: response_body } = await octokit.rest.pulls.listFiles({
       owner: context.repo.owner,
       repo: context.repo.repo,
       pull_number: context.payload.pull_request.number,
@@ -84,12 +84,30 @@ async function assign_reviewers(reviewers) {
   const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
   const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
 
-  return octokit.pulls.requestReviewers({
+  return octokit.rest.pulls.requestReviewers({
     owner: context.repo.owner,
     repo: context.repo.repo,
     pull_number: context.payload.pull_request.number,
     reviewers: individuals,
     team_reviewers: teams,
+  });
+}
+
+async function ping_all_reviewers(reviewers) {
+  const context = get_context();
+  const octokit = get_octokit();
+
+  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
+  const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
+
+  const tagged = individuals.map(individual => `@${individual}`).concat(teams.map(team => `@${team}`))
+  const body = `Attention: ${tagged.join(" ")}\n\nFiles that you are the codeowner for have been modified in this PR.`
+
+  return octokit.rest.issues.createComment({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: context.payload.pull_request.number,
+    body,
   });
 }
 
@@ -133,5 +151,6 @@ module.exports = {
   fetch_config,
   fetch_changed_files,
   assign_reviewers,
+  ping_all_reviewers,
   clear_cache,
 };

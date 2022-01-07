@@ -61,7 +61,10 @@ async function run() {
     reviewers.push(...default_reviewers);
   }
 
-  core.info('Randomly picking reviewers if the number of reviewers is set');
+  core.info(`Tagging ${reviewers} in a comment`);
+  await github.ping_all_reviewers(reviewers);
+
+  core.info(`Randomly picking ${config.options.number_of_reviewers || 'all'} reviewers`);
   reviewers = randomly_pick_reviewers({ reviewers, config });
 
   core.info(`Requesting review to ${reviewers.join(', ')}`);

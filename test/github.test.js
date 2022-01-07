@@ -49,16 +49,18 @@ describe('github', function() {
     const content = fs.readFileSync(config_path, encoding);
 
     const octokit = {
-      repos: {
-        getContent() {
-          return {
-            data: {
-              encoding,
-              content,
-            },
-          };
+      rest: {
+        repos: {
+          getContent() {
+            return {
+              data: {
+                encoding,
+                content,
+              },
+            };
+          },
         },
-      },
+      }
     };
 
     beforeEach(function() {
@@ -76,9 +78,11 @@ describe('github', function() {
   describe('fetch_changed_files()', function() {
     const stub = sinon.stub();
     const octokit = {
-      pulls: {
-        listFiles: stub,
-      },
+      rest: {
+        pulls: {
+          listFiles: stub,
+        },
+      }
     };
 
     beforeEach(function() {
@@ -126,9 +130,11 @@ describe('github', function() {
   describe('assign_reviewers()', function() {
     const spy = sinon.spy();
     const octokit = {
-      pulls: {
-        requestReviewers: spy,
-      },
+      rest: {
+        pulls: {
+          requestReviewers: spy,
+        },
+      }
     };
 
     beforeEach(function() {
