@@ -60,7 +60,7 @@ describe('github', function() {
             };
           },
         },
-      }
+      },
     };
 
     beforeEach(function() {
@@ -82,7 +82,7 @@ describe('github', function() {
         pulls: {
           listFiles: stub,
         },
-      }
+      },
     };
 
     beforeEach(function() {
@@ -134,7 +134,7 @@ describe('github', function() {
         pulls: {
           requestReviewers: spy,
         },
-      }
+      },
     };
 
     beforeEach(function() {

@@ -59,13 +59,28 @@ async function run() {
 
     core.info('Falling back to the default reviewers');
     reviewers.push(...default_reviewers);
+  } else {
+    core.info(`Tagging codeowners in a comment: ${reviewers}`);
+    await github.ping_all_reviewers(reviewers);
   }
 
-  core.info(`Tagging ${reviewers} in a comment`);
-  await github.ping_all_reviewers(reviewers);
+  const existing_reviewers = await github.get_existing_reviewers();
+  if (existing_reviewers.length > 0) {
+    core.info(`The following users are already reviewing this code: ${existing_reviewers}.`);
+  }
 
-  core.info(`Randomly picking ${config.options.number_of_reviewers || 'all'} reviewers`);
-  reviewers = randomly_pick_reviewers({ reviewers, config });
+  let number_of_reviewers = config.options.number_of_reviewers;
+
+  if (number_of_reviewers !== undefined) {
+    number_of_reviewers -= existing_reviewers.length;
+    if (number_of_reviewers <= 0) {
+      core.info('Already have enough reviewers.');
+      return;
+    }
+  }
+
+  core.info(`Randomly picking ${number_of_reviewers || 'all'} reviewers`);
+  reviewers = randomly_pick_reviewers(reviewers, number_of_reviewers);
 
   core.info(`Requesting review to ${reviewers.join(', ')}`);
   await github.assign_reviewers(reviewers);

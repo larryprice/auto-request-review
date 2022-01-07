@@ -16451,13 +16451,28 @@ async function run() {
 
     core.info('Falling back to the default reviewers');
     reviewers.push(...default_reviewers);
+  } else {
+    core.info(`Tagging codeowners in a comment: ${reviewers}`);
+    await github.ping_all_reviewers(reviewers);
   }
 
-  core.info(`Tagging ${reviewers} in a comment`);
-  await github.ping_all_reviewers(reviewers);
+  const existing_reviewers = await github.get_existing_reviewers();
+  if (existing_reviewers.length > 0) {
+    core.info(`The following users are already reviewing this code: ${existing_reviewers}.`);
+  }
 
-  core.info(`Randomly picking ${config.options.number_of_reviewers || 'all'} reviewers`);
-  reviewers = randomly_pick_reviewers({ reviewers, config });
+  let number_of_reviewers = config.options.number_of_reviewers;
+
+  if (number_of_reviewers !== undefined) {
+    number_of_reviewers -= existing_reviewers.length;
+    if (number_of_reviewers <= 0) {
+      core.info('Already have enough reviewers.');
+      return;
+    }
+  }
+
+  core.info(`Randomly picking ${number_of_reviewers || 'all'} reviewers`);
+  reviewers = randomly_pick_reviewers(reviewers, number_of_reviewers);
 
   core.info(`Requesting review to ${reviewers.join(', ')}`);
   await github.assign_reviewers(reviewers);
@@ -17571,8 +17586,8 @@ async function ping_all_reviewers(reviewers) {
   const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
   const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
 
-  const tagged = individuals.map(individual => `@${individual}`).concat(teams.map(team => `@${team}`))
-  const body = `Attention: ${tagged.join(" ")}\n\nFiles that you are the codeowner for have been modified in this PR.`
+  const tagged = individuals.map((individual) => `@${individual}`).concat(teams.map((team) => `@${team}`));
+  const body = `Attention: ${tagged.join(' ')}\n\nFiles that you are the codeowner for have been modified in this PR.`;
 
   return octokit.rest.issues.createComment({
     owner: context.repo.owner,
@@ -17580,6 +17595,19 @@ async function ping_all_reviewers(reviewers) {
     issue_number: context.payload.pull_request.number,
     body,
   });
+}
+
+async function get_existing_reviewers() {
+  const context = get_context();
+  const octokit = get_octokit();
+
+  const { data: { users, teams } } = await octokit.rest.pulls.listRequestedReviewers({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number,
+  });
+
+  return users.map((user) => user.login).concat(teams.map((team) => team.slug));
 }
 
 /* Private */
@@ -17618,6 +17646,7 @@ function clear_cache() {
 }
 
 module.exports = {
+  get_existing_reviewers,
   get_pull_request,
   fetch_config,
   fetch_changed_files,
@@ -21126,7 +21155,7 @@ function identify_reviewers_by_changed_files({ config, changed_files, excludes =
 
   const individuals = replace_groups_with_individuals({ reviewers: matching_reviewers, config });
 
-  // Depue and filter the results
+  // Dedupe and filter the results
   return [ ...new Set(individuals) ].filter((reviewer) => !excludes.includes(reviewer));
 }
 
@@ -21188,11 +21217,7 @@ function fetch_default_reviewers({ config, excludes = [] }) {
   return [ ...new Set(individuals) ].filter((reviewer) => !excludes.includes(reviewer));
 }
 
-function randomly_pick_reviewers({ reviewers, config }) {
-  const { number_of_reviewers } = {
-    ...config.options,
-  };
-
+function randomly_pick_reviewers(reviewers, number_of_reviewers) {
   if (number_of_reviewers === undefined) {
     return reviewers;
   }

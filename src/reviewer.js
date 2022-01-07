@@ -49,7 +49,7 @@ function identify_reviewers_by_changed_files({ config, changed_files, excludes =
 
   const individuals = replace_groups_with_individuals({ reviewers: matching_reviewers, config });
 
-  // Depue and filter the results
+  // Dedupe and filter the results
   return [ ...new Set(individuals) ].filter((reviewer) => !excludes.includes(reviewer));
 }
 
@@ -111,11 +111,7 @@ function fetch_default_reviewers({ config, excludes = [] }) {
   return [ ...new Set(individuals) ].filter((reviewer) => !excludes.includes(reviewer));
 }
 
-function randomly_pick_reviewers({ reviewers, config }) {
-  const { number_of_reviewers } = {
-    ...config.options,
-  };
-
+function randomly_pick_reviewers(reviewers, number_of_reviewers) {
   if (number_of_reviewers === undefined) {
     return reviewers;
   }
