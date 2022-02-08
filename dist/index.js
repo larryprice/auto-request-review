@@ -17645,13 +17645,25 @@ function tagged_users(users) {
 }
 
 async function ping_all_reviewers(codeowners, reviewers) {
+  if (codeowners.length === 0 && reviewers.length === 0) {
+    core.info('No reviewers or codeowners to ping');
+    return;
+  }
+
   const context = get_context();
   const octokit = get_octokit();
 
-  const tagged_codeowners = tagged_users(codeowners);
   const tagged_reviewers = tagged_users(reviewers);
+  const tagged_codeowners = tagged_users(codeowners);
 
-  const body = `Attention: Files that you are the codeowner for have been modified in this PR.\n\nReviewers are required to approve this review. Additional codeowner reviews are optional.\n\nReviewers: ${tagged_reviewers}\n\nAdditional Codeowners: ${tagged_codeowners}`;
+  let body = 'Attention: Files that you are the codeowner for have been modified in this PR.\n\nReviewers are required to approve this review. Additional codeowner reviews are optional.';
+
+  if (tagged_reviewers.length > 0) {
+    body += `\n\nReviewers: ${tagged_reviewers}`;
+  }
+  if (tagged_codeowners.length > 0) {
+    body += `\n\nAdditional Codeowners: ${tagged_codeowners}`;
+  }
 
   const { data } = await get_all_comments();
 
