@@ -44,7 +44,10 @@ async function fetch_config() {
     ref: context.ref,
   });
 
-  const content = Buffer.from(response_body.content, response_body.encoding).toString();
+  const content = Buffer.from(
+    response_body.content,
+    response_body.encoding
+  ).toString();
   return yaml.parse(content);
 }
 
@@ -71,7 +74,6 @@ async function fetch_changed_files() {
 
     number_of_files_in_current_page = response_body.length;
     changed_files.push(...response_body.map((file) => file.filename));
-
   } while (number_of_files_in_current_page === per_page);
 
   return changed_files;
@@ -81,8 +83,12 @@ async function assign_reviewers(reviewers) {
   const context = get_context();
   const octokit = get_octokit();
 
-  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
-  const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
+  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) =>
+    reviewer.startsWith('team:')
+  );
+  const teams = teams_with_prefix.map((team_with_prefix) =>
+    team_with_prefix.replace('team:', '')
+  );
 
   return octokit.rest.pulls.requestReviewers({
     owner: context.repo.owner,
@@ -93,15 +99,46 @@ async function assign_reviewers(reviewers) {
   });
 }
 
-async function ping_all_reviewers(reviewers) {
+async function get_all_comments() {
   const context = get_context();
   const octokit = get_octokit();
 
-  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
-  const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
+  return octokit.rest.issues.listComments({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: context.payload.pull_request.number,
+  });
+}
 
-  const tagged = individuals.map((individual) => `@${individual}`).concat(teams.map((team) => `@${team}`));
-  const body = `Attention: ${tagged.join(' ')}\n\nFiles that you are the codeowner for have been modified in this PR.`;
+function tagged_users(users) {
+  const [ teams_with_prefix, individuals ] = partition(users, (user) =>
+    user.startsWith('team:')
+  );
+  const teams = teams_with_prefix.map((team_with_prefix) =>
+    team_with_prefix.replace('team:', '')
+  );
+
+  return individuals
+    .map((individual) => `@${individual}`)
+    .concat(teams.map((team) => `@${team}`));
+}
+
+async function ping_all_reviewers(codeowners, reviewers) {
+  const context = get_context();
+  const octokit = get_octokit();
+
+  const tagged_codeowners = tagged_users(codeowners);
+  const tagged_reviewers = tagged_users(reviewers);
+
+  const body = `Attention: Files that you are the codeowner for have been modified in this PR.\n\nReviewers are required to approve this review. Additional codeowner reviews are optional.\n\nReviewers: ${tagged_reviewers}\n\nAdditional Codeowners: ${tagged_codeowners}`;
+
+  const { data } = await get_all_comments();
+
+  // Avoid sending the same comment multiple times
+  if (data.find((comment) => comment.body === body)) {
+    core.info('Reviewers were already pinged, not sending again');
+    return;
+  }
 
   return octokit.rest.issues.createComment({
     owner: context.repo.owner,
@@ -115,7 +152,9 @@ async function get_existing_reviewers() {
   const context = get_context();
   const octokit = get_octokit();
 
-  const { data: { users, teams } } = await octokit.rest.pulls.listRequestedReviewers({
+  const {
+    data: { users, teams },
+  } = await octokit.rest.pulls.listRequestedReviewers({
     owner: context.repo.owner,
     repo: context.repo.repo,
     pull_number: context.payload.pull_request.number,
@@ -149,7 +188,7 @@ function get_octokit() {
   }
 
   const token = get_token();
-  return octokit_cache = github.getOctokit(token);
+  return (octokit_cache = github.getOctokit(token));
 }
 
 function clear_cache() {

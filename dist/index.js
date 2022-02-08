@@ -16413,7 +16413,9 @@ async function run() {
     config = await github.fetch_config();
   } catch (error) {
     if (error.status === 404) {
-      core.warning('No configuration file is found in the base branch; terminating the process');
+      core.warning(
+        'No configuration file is found in the base branch; terminating the process'
+      );
       return;
     }
     throw error;
@@ -16430,19 +16432,42 @@ async function run() {
   const changed_files = await github.fetch_changed_files();
 
   core.info('Identifying reviewers based on the changed files');
-  const reviewers_based_on_files = identify_reviewers_by_changed_files({ config, changed_files, excludes: [ author ] });
+  const reviewers_based_on_files = identify_reviewers_by_changed_files({
+    config,
+    changed_files,
+    excludes: [ author ],
+  });
 
   core.info('Identifying reviewers based on the author');
-  const reviewers_based_on_author = identify_reviewers_by_author({ config, author });
+  const reviewers_based_on_author = identify_reviewers_by_author({
+    config,
+    author,
+  });
 
-  core.info('Adding other group members to reviewers if group assignment feature is on');
-  const reviewers_from_same_teams = fetch_other_group_members({ config, author });
+  core.info(
+    'Adding other group members to reviewers if group assignment feature is on'
+  );
+  const reviewers_from_same_teams = fetch_other_group_members({
+    config,
+    author,
+  });
 
-  let reviewers = [ ...new Set([ ...reviewers_based_on_files, ...reviewers_based_on_author, ...reviewers_from_same_teams ]) ];
+  let reviewers = [
+    ...new Set([
+      ...reviewers_based_on_files,
+      ...reviewers_based_on_author,
+      ...reviewers_from_same_teams,
+    ]),
+  ];
+
+  let codeowners = [ ...reviewers ]; // Copy reviewers
 
   if (reviewers.length === 0) {
     core.info('Matched no reviewers');
-    const default_reviewers = fetch_default_reviewers({ config, excludes: [ author ] });
+    const default_reviewers = fetch_default_reviewers({
+      config,
+      excludes: [ author ],
+    });
 
     if (default_reviewers.length === 0) {
       core.info('No default reviewers are matched; terminating the process');
@@ -16451,14 +16476,16 @@ async function run() {
 
     core.info('Falling back to the default reviewers');
     reviewers.push(...default_reviewers);
-  } else {
-    core.info(`Tagging codeowners in a comment: ${reviewers}`);
-    await github.ping_all_reviewers(reviewers);
   }
 
   const existing_reviewers = await github.get_existing_reviewers();
   if (existing_reviewers.length > 0) {
-    core.info(`The following users are already reviewing this code: ${existing_reviewers}.`);
+    core.info(
+      `The following users are already reviewing this code: ${existing_reviewers}.`
+    );
+    codeowners = codeowners.filter(
+      (reviewer) => !existing_reviewers.includes(reviewer)
+    );
   }
 
   let number_of_reviewers = config.options.number_of_reviewers;
@@ -16467,6 +16494,10 @@ async function run() {
     number_of_reviewers -= existing_reviewers.length;
     if (number_of_reviewers <= 0) {
       core.info('Already have enough reviewers.');
+
+      core.info('Tagging all codeowners and reviewers in a comment');
+      await github.ping_all_reviewers(codeowners, existing_reviewers);
+
       return;
     }
   }
@@ -16476,6 +16507,10 @@ async function run() {
 
   core.info(`Requesting review to ${reviewers.join(', ')}`);
   await github.assign_reviewers(reviewers);
+
+  codeowners = codeowners.filter((reviewer) => !reviewers.includes(reviewer));
+  core.info('Tagging all codeowners and reviewers in a comment');
+  await github.ping_all_reviewers(codeowners, reviewers);
 }
 
 module.exports = {
@@ -17530,7 +17565,10 @@ async function fetch_config() {
     ref: context.ref,
   });
 
-  const content = Buffer.from(response_body.content, response_body.encoding).toString();
+  const content = Buffer.from(
+    response_body.content,
+    response_body.encoding
+  ).toString();
   return yaml.parse(content);
 }
 
@@ -17557,7 +17595,6 @@ async function fetch_changed_files() {
 
     number_of_files_in_current_page = response_body.length;
     changed_files.push(...response_body.map((file) => file.filename));
-
   } while (number_of_files_in_current_page === per_page);
 
   return changed_files;
@@ -17567,8 +17604,12 @@ async function assign_reviewers(reviewers) {
   const context = get_context();
   const octokit = get_octokit();
 
-  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
-  const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
+  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) =>
+    reviewer.startsWith('team:')
+  );
+  const teams = teams_with_prefix.map((team_with_prefix) =>
+    team_with_prefix.replace('team:', '')
+  );
 
   return octokit.rest.pulls.requestReviewers({
     owner: context.repo.owner,
@@ -17579,15 +17620,46 @@ async function assign_reviewers(reviewers) {
   });
 }
 
-async function ping_all_reviewers(reviewers) {
+async function get_all_comments() {
   const context = get_context();
   const octokit = get_octokit();
 
-  const [ teams_with_prefix, individuals ] = partition(reviewers, (reviewer) => reviewer.startsWith('team:'));
-  const teams = teams_with_prefix.map((team_with_prefix) => team_with_prefix.replace('team:', ''));
+  return octokit.rest.issues.listComments({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: context.payload.pull_request.number,
+  });
+}
 
-  const tagged = individuals.map((individual) => `@${individual}`).concat(teams.map((team) => `@${team}`));
-  const body = `Attention: ${tagged.join(' ')}\n\nFiles that you are the codeowner for have been modified in this PR.`;
+function tagged_users(users) {
+  const [ teams_with_prefix, individuals ] = partition(users, (user) =>
+    user.startsWith('team:')
+  );
+  const teams = teams_with_prefix.map((team_with_prefix) =>
+    team_with_prefix.replace('team:', '')
+  );
+
+  return individuals
+    .map((individual) => `@${individual}`)
+    .concat(teams.map((team) => `@${team}`));
+}
+
+async function ping_all_reviewers(codeowners, reviewers) {
+  const context = get_context();
+  const octokit = get_octokit();
+
+  const tagged_codeowners = tagged_users(codeowners);
+  const tagged_reviewers = tagged_users(reviewers);
+
+  const body = `Attention: Files that you are the codeowner for have been modified in this PR.\n\nReviewers are required to approve this review. Additional codeowner reviews are optional.\n\nReviewers: ${tagged_reviewers}\n\nAdditional Codeowners: ${tagged_codeowners}`;
+
+  const { data } = await get_all_comments();
+
+  // Avoid sending the same comment multiple times
+  if (data.find((comment) => comment.body === body)) {
+    core.info('Reviewers were already pinged, not sending again');
+    return;
+  }
 
   return octokit.rest.issues.createComment({
     owner: context.repo.owner,
@@ -17601,7 +17673,9 @@ async function get_existing_reviewers() {
   const context = get_context();
   const octokit = get_octokit();
 
-  const { data: { users, teams } } = await octokit.rest.pulls.listRequestedReviewers({
+  const {
+    data: { users, teams },
+  } = await octokit.rest.pulls.listRequestedReviewers({
     owner: context.repo.owner,
     repo: context.repo.repo,
     pull_number: context.payload.pull_request.number,
@@ -17635,7 +17709,7 @@ function get_octokit() {
   }
 
   const token = get_token();
-  return octokit_cache = github.getOctokit(token);
+  return (octokit_cache = github.getOctokit(token));
 }
 
 function clear_cache() {
