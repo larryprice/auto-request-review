@@ -135,7 +135,8 @@ async function ping_all_reviewers(codeowners, reviewers) {
   const tagged_reviewers = tagged_users(reviewers);
   const tagged_codeowners = tagged_users(codeowners);
 
-  let body = 'Attention: Files that you are the codeowner for have been modified in this PR.\n\nReviewers are required to approve this review. Additional codeowner reviews are optional.';
+  let body
+    = 'Attention: Files that you are the codeowner for have been modified in this PR.\n\nReviewers are required to approve this review. Additional codeowner reviews are optional.';
 
   if (tagged_reviewers.length > 0) {
     body += `\n\nReviewers: ${tagged_reviewers}`;
@@ -164,6 +165,25 @@ async function get_existing_reviewers() {
   const context = get_context();
   const octokit = get_octokit();
 
+  // Get anyone who has already reviewed the code. This endpoint returns
+  // anyone who has commented, requested changes, or approved the review.
+  const { data: reviews } = await octokit.rest.pulls.listReviews({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number,
+  });
+
+  // De-dupe the existing reviews and remove any reviews from the author
+  const author = context.payload.pull_request.user.login;
+  const reviewers = [
+    ...new Set(
+      reviews
+        .map((review) => review.user.login)
+        .filter((reviewer) => reviewer !== author)
+    ),
+  ];
+
+  // Get users marked as reviewers who have not yet participated.
   const {
     data: { users, teams },
   } = await octokit.rest.pulls.listRequestedReviewers({
@@ -171,8 +191,12 @@ async function get_existing_reviewers() {
     repo: context.repo.repo,
     pull_number: context.payload.pull_request.number,
   });
+  const pending_reviewers = users
+    .map((user) => user.login)
+    .concat(teams.map((team) => team.slug));
 
-  return users.map((user) => user.login).concat(teams.map((team) => team.slug));
+  // Concat and de-dupe the full list of reviewers
+  return [ ...new Set(pending_reviewers.concat(reviewers)) ];
 }
 
 /* Private */
