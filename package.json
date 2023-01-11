@@ -1,6 +1,6 @@
 {
   "name": "auto-request-review",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "GitHub Action that automatically requests review of a pull request based on files changed",
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "coverage": "nyc report --reporter=text-lcov > coverage/lcov.info"
   },
   "keywords": [],
-  "author": "Taka <necojackarc@gmail.com>",
+  "author": "Larry Price <larry.price.dev@gmail.com>",
   "license": "MIT",
   "dependencies": {
     "@actions/core": "^1.6.0",
@@ -23,7 +23,7 @@
     "@zeit/ncc": "^0.22.3",
     "chai": "^4.2.0",
     "eslint": "^7.7.0",
-    "mocha": "^8.1.2",
+    "mocha": "^10.2.0",
     "nyc": "^15.1.0",
     "sinon": "^9.0.3"
   },
